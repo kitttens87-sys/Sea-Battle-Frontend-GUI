@@ -75,6 +75,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import { API_URL } from '../config.js'
 
 // Переключатель этапов авторизации
 const is2FAStage = ref(false)
@@ -87,10 +88,22 @@ const loginForm = ref({
 const twoFactorCode = ref('')
 
 // Обработка первого этапа (Логин/Пароль)
-const handleLogin = () => {
-  console.log('Отправка логина:', loginForm.value)
-  // Имитируем успешный ответ бэкенда и переключаем на ввод 2FA
-  is2FAStage.value = true
+const handleLogin = async () => {
+  try {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(loginForm.value),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert(data.error || 'Ошибка авторизации')
+      return
+    }
+    is2FAStage.value = true
+  } catch {
+    alert(`Не удалось подключиться к серверу (${API_URL})`)
+  }
 }
 
 // Обработка второго этапа (2FA код)
