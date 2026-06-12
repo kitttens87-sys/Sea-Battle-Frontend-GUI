@@ -19,6 +19,9 @@
 
     <div class="p-4">
       <div class="mb-6">
+        <p v-if="error" class="text-xs text-red-600 font-bold mb-2 leading-tight bg-red-100 border border-red-300 px-2 py-1">
+          {{ error }}
+        </p>
         <p class="text-xs text-black leading-tight">
           {{ is2FAStage ? 'Введите 6-значный код из Google Authenticator:' : 'Авторизуйтесь, чтобы начать бой:' }}
         </p>
@@ -49,11 +52,12 @@
 
         <button 
           type="submit"
+          :disabled="loading"
           class="w-full bg-[#d4d0c8] text-black text-sm font-bold py-2 px-4 border-2 border-t-[#fff] border-l-[#fff] border-b-[#404040] border-r-[#404040] active:border-t-[#404040] active:border-l-[#404040] active:border-b-[#fff] active:border-r-[#fff] shadow-[inset_0_12px_6px_-6px_rgba(255,255,255,0.5),inset_0_-12px_12px_-6px_rgba(0,0,0,0.4)] 
         active:border-t-[#003c6c] active:border-l-[#003c6c] active:border-b-[#fff] active:border-r-[#fff]
-          active:shadow-[inset_0_4px_6px_rgba(0,0,0,0.6)]"
+          active:shadow-[inset_0_4px_6px_rgba(0,0,0,0.6)] disabled:opacity-60 disabled:pointer-events-none"
         >
-          Далее
+          {{ loading ? 'Отправка...' : 'Далее' }}
         </button>
       </form>
 
@@ -73,15 +77,17 @@
         <div class="flex flex-col space-y-3">
           <button 
             type="submit"
-            class="w-full bg-[#d4d0c8] text-black text-sm font-bold py-2 px-4 border-2 border-t-[#fff] border-l-[#fff] border-b-[#404040] border-r-[#404040] active:border-t-[#404040] active:border-l-[#404040] active:border-b-[#fff] active:border-r-[#fff] shadow-[1px_1px_0_0_#000] active:shadow-none"
+            :disabled="loading"
+            class="w-full bg-[#d4d0c8] text-black text-sm font-bold py-2 px-4 border-2 border-t-[#fff] border-l-[#fff] border-b-[#404040] border-r-[#404040] active:border-t-[#404040] active:border-l-[#404040] active:border-b-[#fff] active:border-r-[#fff] shadow-[1px_1px_0_0_#000] active:shadow-none disabled:opacity-60 disabled:pointer-events-none"
           >
-            Подтвердить и войти
+            {{ loading ? 'Проверка...' : 'Подтвердить и войти' }}
           </button>
           
           <button 
             @click="is2FAStage = false" 
             type="button"
-            class="w-full bg-[#d4d0c8] text-black text-xs py-1 px-4 border-2 border-t-[#fff] border-l-[#fff] border-b-[#404040] border-r-[#404040] active:border-t-[#404040] active:border-l-[#404040] active:border-b-[#fff] active:border-r-[#fff] shadow-[1px_1px_0_0_#000] active:shadow-none"
+            :disabled="loading"
+            class="w-full bg-[#d4d0c8] text-black text-xs py-1 px-4 border-2 border-t-[#fff] border-l-[#fff] border-b-[#404040] border-r-[#404040] active:border-t-[#404040] active:border-l-[#404040] active:border-b-[#fff] active:border-r-[#fff] shadow-[1px_1px_0_0_#000] active:shadow-none disabled:opacity-60 disabled:pointer-events-none"
           >
             Вернуться назад
           </button>
@@ -95,8 +101,11 @@
 <script setup>
 import { ref } from 'vue'
 
-// Переключатель этапов авторизации
+const emit = defineEmits(['close', 'login-success'])
+
 const is2FAStage = ref(false)
+const loading = ref(false)
+const error = ref('')
 
 const loginForm = ref({
   username: '',
@@ -104,18 +113,62 @@ const loginForm = ref({
 })
 
 const twoFactorCode = ref('')
+const tempToken = ref('')
 
-// Обработка первого этапа (Логин/Пароль)
-const handleLogin = () => {
-  console.log('Отправка логина:', loginForm.value)
-  // Имитируем успешный ответ бэкенда и переключаем на ввод 2FA
-  is2FAStage.value = true
+const handleLogin = async () => {
+  error.value = ''
+  loading.value = true
+
+  try {
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(loginForm.value)
+    })
+
+    if (res.status === 200) {
+      const data = await res.json()
+      emit('login-success', data.token)
+    } else if (res.status === 202) {
+      const data = await res.json()
+      tempToken.value = data.temp_token
+      is2FAStage.value = true
+    } else {
+      const data = await res.json().catch(() => ({}))
+      error.value = data.error || 'Ошибка авторизации'
+    }
+  } catch {
+    error.value = 'Не удалось подключиться к серверу'
+  } finally {
+    loading.value = false
+  }
 }
 
-// Обработка второго этапа (2FA код)
-const handle2FA = () => {
-  console.log('Отправка TOTP-кода:', twoFactorCode.value)
-  alert(`Успешный вход! Токен отправлен. Код: ${twoFactorCode.value}`)
-  // Здесь в будущем будет вызов метода для открытия WebSockets сессии
+const handle2FA = async () => {
+  error.value = ''
+  loading.value = true
+
+  try {
+    const res = await fetch('/auth/2fa/authenticate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        temp_token: tempToken.value,
+        code: twoFactorCode.value
+      })
+    })
+
+    if (res.status === 200) {
+      const data = await res.json()
+      emit('login-success', data.token)
+    } else {
+      const data = await res.json().catch(() => ({}))
+      error.value = data.error || 'Неверный код'
+    }
+  } catch {
+    error.value = 'Не удалось подключиться к серверу'
+  } finally {
+    loading.value = false
+  }
 }
 </script>

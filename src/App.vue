@@ -39,7 +39,10 @@
             Sea battle
           </h1>
         </div>
-        <AuthForm @close="isStartScreen = true" />
+        <AuthForm v-if="!isLoggedIn" @close="isStartScreen = true" @login-success="onLoginSuccess" />
+        <div v-else class="text-white font-mono text-lg [text-shadow:1px_1px_0_#000]">
+          ✅ Успешный вход!
+        </div>
       </div>
 
     </div>
@@ -52,8 +55,16 @@ import AuthForm from './components/AuthForm.vue'
 import Hls from 'hls.js'
 
 const isStartScreen = ref(true)
+const isLoggedIn = ref(false)
+const authToken = ref('')
 const videoRef = ref(null)
 let hlsInstance = null
+
+const onLoginSuccess = (token) => {
+  authToken.value = token
+  isLoggedIn.value = true
+  console.log('Успешный вход, токен сохранён')
+}
 
 const streamUrl = '/stream/playlist.m3u8'
 
